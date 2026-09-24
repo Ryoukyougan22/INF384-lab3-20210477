@@ -1,5 +1,9 @@
 name: infra
 
+permissions:
+  contents: read
+  pull-requests: write
+
 # Pipeline de infraestructura. Es dueno de la existencia y la configuracion
 # de la funcion, y no toca la imagen.
 
