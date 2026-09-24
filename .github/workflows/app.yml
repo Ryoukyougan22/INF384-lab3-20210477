@@ -112,11 +112,17 @@ jobs:
   # Sustituir el paso centinela por la implementacion.
   secretos:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Sin implementar
-        run: |
-          echo "::error::El job 'secretos' no esta implementado."
-          exit 1
+      - name: Descargar repositorio con historial completo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detectar secretos con Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # TODO
   # Contrastar el arbol de dependencias declarado en package-lock.json contra
