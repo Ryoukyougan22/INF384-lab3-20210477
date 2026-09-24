@@ -3,6 +3,7 @@ const { Cookie } = require('tough-cookie');
 const { obtenerVersion } = require('./version');
 
 const NOMBRE_COOKIE_SESION = 'inf384_sesion';
+const TOKEN_PRUEBA = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"; //Credencial falsa
 
 // Lee el marcador de sesion de las cabeceras del evento.
 // Devuelve null cuando la cabecera no existe, no es analizable
