@@ -177,11 +177,53 @@ jobs:
   # Sustituir el paso centinela por la implementacion.
   estatico:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Sin implementar
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Analizar el codigo fuente con Semgrep
         run: |
-          echo "::error::El job 'estatico' no esta implementado."
-          exit 1
+          docker run --rm \
+            --volume "${PWD}:/src" \
+            --workdir /src \
+            --env SEMGREP_SEND_METRICS=off \
+            semgrep/semgrep \
+            semgrep scan \
+            --config=p/default \
+            --config=p/javascript \
+            --json --quiet \
+            --output=semgrep.json \
+            src/
+
+      - name: Mostrar hallazgos en el resumen
+        if: always()
+        run: |
+          {
+            echo '### Analisis estatico — Semgrep'
+            echo
+
+            if [ -f semgrep.json ]; then
+              total="$(jq '.results | length' semgrep.json)"
+
+              echo "**Hallazgos encontrados: ${total}**"
+              echo
+
+              if [ "$total" -gt 0 ]; then
+                echo '| Regla | Archivo | Linea | Mensaje |'
+                echo '|---|---|---:|---|'
+
+                jq -r '
+                  .results[] |
+                  "| \(.check_id) | \(.path) | \(.start.line) | \(.extra.message | gsub("\\|"; "\\\\|")) |"
+                ' semgrep.json
+              else
+                echo 'No se encontraron patrones explotables.'
+              fi
+            else
+              echo 'No se genero el reporte de Semgrep.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # TODO
   # Construir la imagen de la aplicacion y publicarla en el registro privado.
