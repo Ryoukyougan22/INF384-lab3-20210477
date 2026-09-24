@@ -1,0 +1,23 @@
+# Control de versiones y GitHub
+.git
+.github
+
+# Dependencias y artefactos generados
+node_modules
+dist
+coverage
+
+# Archivos que no necesita la imagen de la aplicación
+infra
+test
+README.md
+sonar-project.properties
+
+# Archivos locales / sensibles
+.env
+.env.*
+*.log
+
+# Archivos auxiliares del repositorio
+.gitignore
+.dockerignore.ejemplo
