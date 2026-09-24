@@ -13,6 +13,12 @@ on:
     paths:
       - 'infra/**'
   workflow_dispatch:
+    inputs:
+      autorizar_destruccion:
+        description: 'Autorizar explícitamente acciones delete del plan'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
 
@@ -136,11 +142,98 @@ jobs:
   plan:
     needs: [validar, politicas]
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infra
+
     steps:
-      - name: Sin implementar
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Inicializar Terraform
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Generar plan
+        run: terraform plan -out=tfplan
+
+      - name: Exportar plan
         run: |
-          echo "::error::El job 'plan' no esta implementado."
-          exit 1
+          terraform show -json tfplan > tfplan.json
+          terraform show -no-color tfplan > tfplan.txt
+
+      - name: Publicar plan en el resumen
+        run: |
+          {
+            echo '### Terraform Plan'
+            echo
+            echo '```text'
+            cat tfplan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar plan en el Pull Request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infra/tfplan.txt', 'utf8');
+
+            const body = `### Terraform Plan
+
+            \`\`\`text
+            ${plan}
+            \`\`\``;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+      - name: Verificar destrucciones no autorizadas
+        env:
+          AUTORIZAR_DESTRUCCION: ${{ github.event_name == 'workflow_dispatch' && inputs.autorizar_destruccion || false }}
+        run: |
+          DELETES="$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' tfplan.json)"
+
+          echo "Recursos con accion delete: $DELETES"
+
+          if [ "$DELETES" -gt 0 ]; then
+            echo "::warning::El plan contiene ${DELETES} recurso(s) con accion delete."
+
+            if [ "$AUTORIZAR_DESTRUCCION" != "true" ]; then
+              echo "::error::Hay destrucciones en el plan y no existe autorizacion manual."
+              exit 1
+            fi
+
+            echo "La destruccion fue autorizada explicitamente en una ejecucion manual."
+          fi
+
+      - name: Guardar plan para apply
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: |
+            infra/tfplan
+            infra/tfplan.json
+            infra/tfplan.txt
+          if-no-files-found: error
 
   # TODO
   # Aplicar el plan que produjo el job anterior, sin recalcularlo.
