@@ -257,12 +257,62 @@ jobs:
   #
   # Sustituir el paso centinela por la implementacion.
   publicar:
+    needs: [calidad, secretos, dependencias, estatico]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+
+    outputs:
+      digest: ${{ steps.imagen.outputs.digest }}
+
     steps:
-      - name: Sin implementar
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Iniciar sesion en Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Construir y publicar imagen
+        id: imagen
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: inf384-lab3
         run: |
-          echo "::error::El job 'publicar' no esta implementado."
-          exit 1
+          set -euo pipefail
+
+          SHA_CORTO="${GITHUB_SHA:0:7}"
+
+          docker build \
+            --platform linux/amd64 \
+            --label "org.opencontainers.image.title=${REPOSITORY}" \
+            --tag "${REGISTRY}/${REPOSITORY}:${SHA_CORTO}" \
+            --tag "${REGISTRY}/${REPOSITORY}:prd" \
+            .
+
+          docker push "${REGISTRY}/${REPOSITORY}:${SHA_CORTO}"
+          docker push "${REGISTRY}/${REPOSITORY}:prd"
+
+          DIGEST="$(docker inspect \
+            --format='{{index .RepoDigests 0}}' \
+            "${REGISTRY}/${REPOSITORY}:${SHA_CORTO}")"
+
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo '### Imagen publicada'
+            echo
+            echo "- Tag inmutable: \`${SHA_CORTO}\`"
+            echo "- Tag de ambiente: \`prd\`"
+            echo "- Digest: \`${DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Este job viene completo y no se modifica.
   # Las estrategias de despliegue y la verificacion posterior son contenido
