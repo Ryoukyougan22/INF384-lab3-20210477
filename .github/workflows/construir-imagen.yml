@@ -42,6 +42,7 @@ jobs:
 
   construir:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -70,12 +71,20 @@ jobs:
                     | sed -E 's/.*[[:space:]][Aa][Ss][[:space:]]+([^[:space:]]+).*/\1/' || true)"
 
           : > etapas.txt
+
           if [ -z "$etapas" ]; then
             echo "::warning::El Dockerfile declara una sola etapa. La construccion en dos etapas es parte del bloque A1."
           fi
+
           for etapa in $etapas; do
             echo "== etapa ${etapa}"
-            docker build --platform linux/amd64 --target "$etapa" --tag "${IMAGEN}:etapa-${etapa}" .
+
+            docker build \
+              --platform linux/amd64 \
+              --target "$etapa" \
+              --tag "${IMAGEN}:etapa-${etapa}" \
+              .
+
             printf '%s\t%s\n' "$etapa" \
               "$(docker image inspect "${IMAGEN}:etapa-${etapa}" --format '{{.Size}}' | numfmt --to=iec)" \
               >> etapas.txt
@@ -88,16 +97,19 @@ jobs:
           IMAGEN: ${{ env.APLICACION }}
         run: |
           set -euo pipefail
+
           docker build \
             --platform linux/amd64 \
             --label "org.opencontainers.image.title=${IMAGEN}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "${IMAGEN}:${GITHUB_SHA:0:7}" \
             .
+
           # Si la ultima etapa tiene nombre ya quedo medida arriba: la imagen
           # final es esa misma etapa con los labels encima.
           if ! grep -iE '^[[:space:]]*FROM[[:space:]]' Dockerfile | tail -1 \
                | grep -qiE '[[:space:]]AS[[:space:]]+'; then
+
             printf '%s\t%s\n' "(imagen final)" \
               "$(docker image inspect "${IMAGEN}:${GITHUB_SHA:0:7}" --format '{{.Size}}' | numfmt --to=iec)" \
               >> etapas.txt
@@ -110,6 +122,7 @@ jobs:
           IMAGEN: ${{ env.APLICACION }}
         run: |
           set -uo pipefail
+
           imagen="${IMAGEN}:${GITHUB_SHA:0:7}"
           falla=0
 
@@ -118,16 +131,16 @@ jobs:
             echo
             echo '| Etapa | Tamano |'
             echo '|---|---|'
+
             while IFS="$(printf '\t')" read -r etapa tamano; do
               echo "| \`${etapa}\` | ${tamano} |"
             done < etapas.txt
+
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
           # --- Comprobacion 1: credenciales en la historia de la imagen -----
-          # Cubre la historia completa y las variables de entorno que quedan
-          # declaradas en la imagen: las dos formas en que una credencial
-          # escrita en el Dockerfile sobrevive a la construccion.
+
           patron='(PASSWORD|PASSWD|SECRET|TOKEN|CREDENTIAL|ACCESS_KEY|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*=[^[:space:]"]'
 
           {
@@ -136,8 +149,11 @@ jobs:
           } > historia.txt
 
           if hallazgos="$(grep -iE "$patron" historia.txt)"; then
+
             falla=1
+
             echo "::error::Hay valores de credencial en la imagen construida."
+
             {
               echo '### Comprobacion 1: credenciales — HALLAZGO'
               echo
@@ -150,43 +166,47 @@ jobs:
               echo 'Borrar la linea no basta si la capa ya existe: la credencial se retira del Dockerfile y se rota en el origen.'
               echo
             } >> "$GITHUB_STEP_SUMMARY"
+
           else
+
             {
               echo '### Comprobacion 1: credenciales — OK'
               echo
               echo '`docker history` y el entorno de la imagen no muestran ningun valor de credencial.'
               echo
             } >> "$GITHUB_STEP_SUMMARY"
+
           fi
 
           # --- Comprobacion 2: contenido de la etapa final ------------------
-          # El sistema de archivos se lee exportando el contenedor, no
-          # ejecutando comandos dentro: no depende de que la imagen traiga
-          # shell.
+
           contenedor="$(docker create --platform linux/amd64 "$imagen")"
+
           docker export "$contenedor" | tar -t > archivos.txt
+
           docker rm -f "$contenedor" > /dev/null
 
-          # node_modules de la aplicacion. Lo que cuelga de /var/lang y de
-          # /var/runtime no cuenta: son los arboles de npm y del runtime que
-          # trae la imagen base de Lambda, y no se pueden quitar de ahi.
+          # node_modules de la aplicacion.
           arboles="$(grep -E 'node_modules/' archivos.txt \
                      | sed -E 's#(node_modules/).*#\1#' \
                      | grep -vE '^(var/lang|var/runtime)/' \
-                     | sort -u)"
+                     | sort -u || true)"
 
           # Uso del gestor de paquetes del sistema en las capas de la imagen.
-          # La imagen base no invoca ninguno, asi que cualquier coincidencia
-          # sale de la etapa final del Dockerfile.
           gestor="$(docker history --no-trunc --format '{{.CreatedBy}}' "$imagen" \
-                    | grep -iE '(dnf|yum|microdnf|rpm|apt-get|apk)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(install|-i)')"
+                    | grep -iE '(dnf|yum|microdnf|rpm|apt-get|apk)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(install|-i)' \
+                    || true)"
 
           if [ -n "$arboles" ] || [ -n "$gestor" ]; then
+
             falla=1
+
             echo "::error::La etapa final lleva node_modules de la aplicacion o instala paquetes del sistema."
+
             {
               echo '### Comprobacion 2: contenido de la etapa final — HALLAZGO'
               echo
+
               if [ -n "$arboles" ]; then
                 echo 'Arboles `node_modules` de la aplicacion en la etapa final:'
                 echo
@@ -197,6 +217,7 @@ jobs:
                 echo 'La etapa final recibe unicamente `dist/handler.js`, el artefacto que deja `npm run build`.'
                 echo
               fi
+
               if [ -n "$gestor" ]; then
                 echo 'Instalaciones con el gestor de paquetes del sistema en las capas de la imagen:'
                 echo
@@ -207,14 +228,18 @@ jobs:
                 echo 'Las herramientas de depuracion, si hacen falta, van en la etapa de construccion.'
                 echo
               fi
+
             } >> "$GITHUB_STEP_SUMMARY"
+
           else
+
             {
               echo '### Comprobacion 2: contenido de la etapa final — OK'
               echo
               echo 'La etapa final no lleva `node_modules` de la aplicacion ni instala paquetes del sistema.'
               echo
             } >> "$GITHUB_STEP_SUMMARY"
+
           fi
 
           exit "$falla"
