@@ -1,20 +1,28 @@
 # Dockerfile del repositorio base.
 # Contiene cinco malas practicas deliberadas. Cada una lleva su numero en la
-# linea anterior. Corregirlas es el bloque A1 de la guia del laboratorio.
+# linea anterior. Corregirlas es el bloque A1 de la guia del laboratorio. (CORREGIDO)
 
-# defecto 1
-FROM public.ecr.aws/lambda/nodejs:latest
+# Etapa 1: construir la aplicación
+FROM public.ecr.aws/lambda/nodejs:20 AS build
 
-# defecto 2
-COPY . .
+# Copiar primero los archivos de dependencias
+COPY package.json package-lock.json ./
 
-# defecto 3
-RUN npm install
+# Instalar exactamente las versiones del lock file
+RUN npm ci
 
-# defecto 4
-ENV DB_PASSWORD="inf384-clave-en-texto-plano"
+# Copiar el código fuente
+COPY src ./src
 
-# defecto 5
-RUN dnf install -y procps-ng vim && dnf clean all
+# Empaquetar la aplicación en dist/handler.js
+RUN npm run build
 
-CMD ["src/handler.handler"]
+
+# Etapa 2: imagen final
+FROM public.ecr.aws/lambda/nodejs:20 AS final
+
+# La imagen final recibe únicamente el artefacto empaquetado
+COPY --from=build /var/task/dist/handler.js /var/task/dist/handler.js
+
+# Lambda ejecuta la función "handler" exportada por dist/handler.js
+CMD ["dist/handler.handler"]
