@@ -64,9 +64,8 @@ resource "aws_ecr_repository_policy" "descarga_lambda" {
 # El nombre del grupo debe coincidir con el que Lambda usa por convencion,
 # o la funcion crea el suyo y esta retencion no aplica.
 resource "aws_cloudwatch_log_group" "funcion" {
-  count = 0
 
-  name              = "/aws/lambda/${var.nombre_aplicacion}"
+  name              = "/aws/lambda/${var.nombre_aplicacion}-prueba-destruccion"
   retention_in_days = 7
 
 resource "aws_lambda_function" "app" {
