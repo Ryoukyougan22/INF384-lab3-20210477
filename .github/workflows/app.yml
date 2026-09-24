@@ -139,11 +139,32 @@ jobs:
   # Sustituir el paso centinela por la implementacion.
   dependencias:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Sin implementar
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Analizar dependencias con Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          format: table
+          output: trivy-dependencias.txt
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Mostrar hallazgos en el resumen
+        if: always()
         run: |
-          echo "::error::El job 'dependencias' no esta implementado."
-          exit 1
+          {
+            echo '### Analisis de dependencias — Trivy'
+            echo
+            echo '```text'
+            cat trivy-dependencias.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # TODO
   # Buscar patrones explotables en el codigo fuente.
