@@ -1,3 +1,4 @@
+# Cambio de prueba para validar la publicación del Terraform Plan en un PR
 terraform {
   required_version = ">= 1.10"
 
